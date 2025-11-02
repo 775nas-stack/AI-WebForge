@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+jinja2
+pydantic-settings
+python-multipart
+gitpython
+openai
+torch
+transformers
+diffusers
+safetensors
