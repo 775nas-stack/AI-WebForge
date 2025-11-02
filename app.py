@@ -13,6 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from core.db import init_db
+from domains.chat.router import router as chat_router
+from domains.models.router import router as models_router
 from forge.ai_controller import ai_controller
 from forge.build_stream import build_stream
 from forge.local_ai import local_ai
@@ -51,6 +54,15 @@ class ModelCompareRequest(BaseModel):
 app = FastAPI(title="AI-WebForge", description="Private AI-assisted web scaffold generator.")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    init_db()
+
+
+app.include_router(chat_router)
+app.include_router(models_router)
 
 
 @app.get("/", response_class=HTMLResponse)

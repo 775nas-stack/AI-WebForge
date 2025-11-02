@@ -9,3 +9,5 @@ ctransformers
 llama-cpp-python
 safetensors
 gitpython
+sqlmodel==0.0.21
+aiosqlite==0.20.0
