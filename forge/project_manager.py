@@ -4,11 +4,13 @@ from __future__ import annotations
 import io
 import json
 import shutil
+import textwrap
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from .utils import PROJECTS_DIR, collect_directory_tree
+from .utils import PROJECTS_DIR, collect_directory_tree, slugify
 
 
 class ProjectManager:
@@ -54,6 +56,27 @@ class ProjectManager:
             (project_dir / "manifest.json").write_text(json.dumps({"summary": summary}, indent=2), encoding="utf-8")
 
         return project_dir
+
+    def create_from_prompt(self, prompt: str) -> Dict[str, object]:
+        """Generate a scaffolded project using the provided natural language prompt."""
+
+        slug = slugify(prompt)
+        base_name = slug or f"project-{datetime.utcnow():%Y%m%d%H%M%S}"
+        summary = f"Generated from prompt: {prompt.strip()[:140]}"
+        files = self._render_scaffold(prompt)
+
+        counter = 1
+        project_name = base_name
+        while True:
+            try:
+                self.create_project(project_name, files, summary=summary)
+            except FileExistsError:
+                counter += 1
+                project_name = f"{base_name}-{counter}"
+            else:
+                break
+
+        return {"name": project_name, "summary": summary, "files": files}
 
     def delete_project(self, name: str) -> None:
         """Delete the specified project."""
@@ -119,6 +142,173 @@ class ProjectManager:
         if not project_dir.exists():
             raise FileNotFoundError(f"Project '{name}' not found.")
         return collect_directory_tree(project_dir)
+
+    def preview_html(self, name: str) -> str:
+        """Return HTML suitable for inline preview of a project."""
+
+        project_dir = self._project_path(name)
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project '{name}' not found.")
+
+        candidates = [
+            project_dir / "index.html",
+            project_dir / "public" / "index.html",
+            project_dir / "app" / "templates" / "index.html",
+        ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate.read_text(encoding="utf-8", errors="ignore")
+
+        raise FileNotFoundError("No previewable HTML file found in project.")
+
+    # ------------------------------------------------------------------
+    # scaffold helpers
+    # ------------------------------------------------------------------
+    def _render_scaffold(self, prompt: str) -> Dict[str, str]:
+        """Return a structured project scaffold derived from the prompt."""
+
+        title = prompt.strip().title() or "AI WebForge Project"
+        slug = slugify(title)
+        css_content = textwrap.dedent(
+            f"""
+            :root {{
+                color-scheme: dark;
+                font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            }}
+
+            body {{
+                margin: 0;
+                padding: 0;
+                min-height: 100vh;
+                background: radial-gradient(circle at top, #111927 0%, #05070a 100%);
+                color: #f8fafc;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }}
+
+            .container {{
+                width: min(960px, 90vw);
+                padding: 3rem;
+                background: rgba(15, 23, 42, 0.85);
+                border-radius: 24px;
+                border: 1px solid rgba(148, 163, 184, 0.12);
+                box-shadow: 0 24px 60px -32px rgba(0, 0, 0, 0.75);
+            }}
+
+            .accent {{
+                color: #00e19a;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.18em;
+            }}
+
+            button {{
+                background: linear-gradient(120deg, #00e19a 0%, #11f0aa 100%);
+                border: none;
+                color: #03110d;
+                padding: 0.85rem 1.6rem;
+                font-weight: 600;
+                border-radius: 999px;
+                cursor: pointer;
+                transition: transform 150ms ease, box-shadow 150ms ease;
+            }}
+
+            button:hover {{
+                transform: translateY(-1px);
+                box-shadow: 0 12px 20px -12px rgba(0, 225, 154, 0.55);
+            }}
+            """
+        ).strip()
+
+        html_content = textwrap.dedent(
+            f"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>{title}</title>
+                <link rel="stylesheet" href="./static/style.css">
+            </head>
+            <body>
+                <main class="container">
+                    <p class="accent">{slug}</p>
+                    <h1>{title}</h1>
+                    <p>{prompt.strip() or 'A locally generated scaffold created by AI-WebForge.'}</p>
+                    <button id="cta">Launch Experience</button>
+                </main>
+                <script src="./static/script.js" defer></script>
+            </body>
+            </html>
+            """
+        ).strip()
+
+        js_content = textwrap.dedent(
+            """
+            document.addEventListener('DOMContentLoaded', () => {
+                const button = document.querySelector('#cta');
+                if (!button) return;
+                button.addEventListener('click', () => {
+                    button.textContent = 'Experience in progress…';
+                    button.disabled = true;
+                    setTimeout(() => {
+                        button.textContent = 'Ready to Launch';
+                        button.disabled = false;
+                    }, 1200);
+                });
+            });
+            """
+        ).strip()
+
+        api_content = textwrap.dedent(
+            """
+            '''Minimal FastAPI application for the generated project.'''
+            from fastapi import FastAPI
+            from fastapi.responses import HTMLResponse
+            from pathlib import Path
+
+
+            app = FastAPI(title="Generated App")
+
+
+            @app.get("/", response_class=HTMLResponse)
+            async def index() -> HTMLResponse:
+                html_path = Path(__file__).resolve().parent.parent / "public" / "index.html"
+                return HTMLResponse(html_path.read_text(encoding="utf-8"))
+            """
+        ).strip()
+
+        readme_content = textwrap.dedent(
+            f"""
+            # {title}
+
+            Generated locally by **AI-WebForge** on {datetime.utcnow():%Y-%m-%d %H:%M UTC}.
+
+            ## Overview
+
+            - Prompt: `{prompt.strip()}`
+            - Framework: FastAPI + static frontend assets
+            - Theme: Dark interface with neon green highlights
+
+            ## Getting Started
+
+            ```bash
+            uvicorn app.main:app --reload
+            ```
+
+            Then open http://127.0.0.1:8000 to explore the generated experience.
+            """
+        ).strip()
+
+        return {
+            "public/index.html": html_content,
+            "public/static/style.css": css_content,
+            "public/static/script.js": js_content,
+            "app/main.py": api_content,
+            "README.md": readme_content,
+        }
 
 
 project_manager = ProjectManager()

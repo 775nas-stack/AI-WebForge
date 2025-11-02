@@ -15,6 +15,7 @@
                 <h2>{{ project.name }}</h2>
                 {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
                 <div class="wf-card__actions">
+                    <a class="wf-link" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
                     <a class="wf-link" href="/editor/{{ project.name }}">Open</a>
                     <a class="wf-link" href="/api/projects/download/{{ project.name }}">Download</a>
                     <button class="wf-link wf-link--danger" data-action="delete" data-project="{{ project.name }}">Delete</button>

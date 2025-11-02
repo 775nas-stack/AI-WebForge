@@ -1,6 +1,32 @@
 const qs = (selector, scope = document) => scope.querySelector(selector);
 const qsa = (selector, scope = document) => Array.from(scope.querySelectorAll(selector));
 
+async function requestJSON(url, { method = 'POST', data, headers = {} } = {}) {
+    const options = { method, headers: { ...headers } };
+    if (data !== undefined) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(data);
+    }
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        let detail = 'Request failed';
+        try {
+            const payload = await response.json();
+            detail = payload.detail || detail;
+        } catch (error) {
+            // ignore JSON parse errors
+        }
+        throw new Error(detail);
+    }
+    return response.json();
+}
+
+async function fetchJSON(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Request failed');
+    return response.json();
+}
+
 function appendChatMessage(role, text) {
     const log = qs('#chat-log');
     if (!log) return;
@@ -9,25 +35,6 @@ function appendChatMessage(role, text) {
     bubble.textContent = String(text || '').trim();
     log.appendChild(bubble);
     log.scrollTop = log.scrollHeight;
-}
-
-async function postJSON(url, data) {
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    });
-    if (!response.ok) {
-        throw new Error((await response.json()).detail || 'Request failed');
-    }
-    return response.json();
-}
-
-async function deleteProject(name) {
-    const response = await fetch(`/api/projects/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    if (!response.ok) {
-        throw new Error('Failed to delete project');
-    }
 }
 
 function renderProjectList(projects) {
@@ -52,6 +59,7 @@ function renderProjectList(projects) {
                 ${project.summary ? `<p class="wf-muted">${project.summary}</p>` : ''}
             </div>
             <div class="wf-actions">
+                <a class="wf-link" href="/api/projects/run/${project.name}" target="_blank">Preview</a>
                 <a class="wf-link" href="/editor/${project.name}">Open</a>
                 <a class="wf-link" href="/api/projects/download/${project.name}">Download</a>
                 <button class="wf-link wf-link--danger" data-action="delete" data-project="${project.name}">Delete</button>
@@ -61,34 +69,8 @@ function renderProjectList(projects) {
     }
 }
 
-function bindChat() {
-    const form = qs('#chat-form');
-    const input = qs('#chat-input');
-    if (!form || !input) return;
-
-    form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const message = input.value.trim();
-        if (!message) return;
-        input.value = '';
-        appendChatMessage('user', message);
-        const submitButton = qs('.wf-button', form);
-        try {
-            if (submitButton) submitButton.disabled = true;
-            const { response, projects } = await postJSON('/api/chat', { message });
-            appendChatMessage('ai', response.message || 'No response received.');
-            if (response.generated) {
-                appendChatMessage('ai', `Generated project: ${response.generated.name}`);
-            }
-            if (Array.isArray(projects)) {
-                renderProjectList(projects);
-            }
-        } catch (error) {
-            appendChatMessage('ai', `Error: ${error.message}`);
-        } finally {
-            if (submitButton) submitButton.disabled = false;
-        }
-    });
+async function deleteProject(name) {
+    await fetch(`/api/projects/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
 
 function bindProjectDeletion(scope = document) {
@@ -101,16 +83,120 @@ function bindProjectDeletion(scope = document) {
         if (!confirm(`Delete project "${name}"?`)) return;
         try {
             await deleteProject(name);
-            const parentItem = target.closest('[data-project]');
-            if (parentItem) parentItem.remove();
-            const list = target.closest('#project-list');
-            if (list && !list.querySelector('.wf-list__item')) {
-                renderProjectList([]);
-            }
+            const projectItem = target.closest('[data-project]');
+            if (projectItem) projectItem.remove();
+            const card = target.closest('.wf-card');
+            if (card) card.remove();
+            await refreshProjects();
         } catch (error) {
             alert(error.message);
         }
     });
+}
+
+async function refreshProjects() {
+    try {
+        const payload = await fetchJSON('/api/projects');
+        if (Array.isArray(payload.projects)) {
+            renderProjectList(payload.projects);
+        }
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+function renderModelSummary(models, active) {
+    const list = qs('#model-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!models.length) {
+        const empty = document.createElement('li');
+        empty.className = 'wf-empty';
+        empty.textContent = 'No models uploaded yet.';
+        list.appendChild(empty);
+        return;
+    }
+    for (const model of models) {
+        const item = document.createElement('li');
+        item.className = 'wf-list__item';
+        item.innerHTML = `
+            <div>
+                <strong>${model.name}</strong>
+                <p class="wf-muted">${(model.type || '').toUpperCase()} · ${model.size}${model.name === active ? ' · Active' : ''}</p>
+            </div>
+        `;
+        list.appendChild(item);
+    }
+}
+
+function renderModelGrid(models, active) {
+    const grid = qs('#model-grid');
+    if (!grid) return;
+    grid.dataset.active = active || '';
+    grid.innerHTML = '';
+    if (!models.length) {
+        const empty = document.createElement('div');
+        empty.className = 'wf-empty';
+        empty.textContent = 'No models uploaded yet. Upload your first model to begin.';
+        grid.appendChild(empty);
+        return;
+    }
+
+    for (const model of models) {
+        const card = document.createElement('article');
+        card.className = 'wf-card';
+        card.dataset.model = model.name;
+        const isActive = model.name === active;
+        card.innerHTML = `
+            <header class="wf-card__header">
+                <h2>${model.name}</h2>
+                ${isActive ? '<span class="wf-badge">Active</span>' : ''}
+            </header>
+            <p class="wf-muted">${(model.type || '').toUpperCase()} · ${model.size}</p>
+            <p class="wf-hash">SHA256: ${model.hash}</p>
+            ${model.parameters ? `<p class="wf-muted">Parameters: ${model.parameters}</p>` : ''}
+            ${model.uploaded_at ? `<p class="wf-muted">Uploaded ${model.uploaded_at}</p>` : ''}
+            <div class="wf-card__actions">
+                <button class="wf-link" data-action="activate" data-model="${model.name}">Use model</button>
+                <button class="wf-link wf-link--danger" data-action="delete-model" data-model="${model.name}">Delete</button>
+            </div>
+        `;
+        grid.appendChild(card);
+    }
+}
+
+async function refreshModels() {
+    try {
+        const payload = await fetchJSON('/api/models');
+        const models = Array.isArray(payload.models) ? payload.models : [];
+        const active = payload.active || null;
+        renderModelSummary(models, active);
+        renderModelGrid(models, active);
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+async function handleModelAction(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const action = target.dataset.action;
+    if (!action) return;
+    const name = target.dataset.model;
+    if (!name) return;
+
+    try {
+        if (action === 'activate') {
+            await requestJSON(`/api/models/select/${encodeURIComponent(name)}`);
+            appendChatMessage('ai', `Model "${name}" activated.`);
+        } else if (action === 'delete-model') {
+            if (!confirm(`Delete model "${name}"?`)) return;
+            await fetch(`/api/models/delete/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        }
+        await refreshModels();
+    } catch (error) {
+        alert(error.message);
+    }
 }
 
 function bindModelUpload() {
@@ -122,69 +208,27 @@ function bindModelUpload() {
         try {
             const response = await fetch('/api/models/upload', {
                 method: 'POST',
-                body: formData
+                body: formData,
             });
             if (!response.ok) {
                 const payload = await response.json();
                 throw new Error(payload.detail || 'Upload failed');
             }
-            const { model } = await response.json();
-            addModelCard(model);
+            await response.json();
             form.reset();
+            await refreshModels();
         } catch (error) {
             alert(error.message);
         }
     });
 }
 
-function addModelCard(model) {
-    const grid = qs('#model-grid');
-    const list = qs('#model-list');
-    if (grid) {
-        const card = document.createElement('article');
-        card.className = 'wf-card';
-        card.innerHTML = `
-            <h2>${model.name}</h2>
-            <p class="wf-muted">${model.type?.toUpperCase?.() || model.type} · ${model.size}</p>
-            <p class="wf-hash">SHA256: ${model.hash}</p>
-        `;
-        const emptyState = grid.querySelector('.wf-empty');
-        if (emptyState) emptyState.remove();
-        grid.prepend(card);
-    }
-    if (list) {
-        const item = document.createElement('li');
-        item.className = 'wf-list__item';
-        item.innerHTML = `
-            <div>
-                <strong>${model.name}</strong>
-                <p class="wf-muted">${model.type?.toUpperCase?.() || model.type} · ${model.size}</p>
-            </div>
-        `;
-        const emptyState = list.querySelector('.wf-empty');
-        if (emptyState) emptyState.remove();
-        list.prepend(item);
-    }
+function bindModelActions() {
+    document.addEventListener('click', handleModelAction);
 }
 
-function buildFileTree(tree) {
-    const fileTree = qs('#file-tree');
-    if (!fileTree) return;
-    fileTree.innerHTML = '';
-
-    Object.entries(tree).forEach(([directory, files]) => {
-        const dirLabel = document.createElement('li');
-        dirLabel.textContent = directory === '.' ? 'root' : directory;
-        dirLabel.className = 'wf-tree__label';
-        fileTree.appendChild(dirLabel);
-        Object.values(files).forEach((path) => {
-            const fileItem = document.createElement('li');
-            fileItem.className = 'wf-tree__item';
-            fileItem.dataset.path = path;
-            fileItem.textContent = path;
-            fileTree.appendChild(fileItem);
-        });
-    });
+function splitPath(path) {
+    return path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
 }
 
 function bindEditor() {
@@ -237,10 +281,8 @@ function bindEditor() {
     saveButton.addEventListener('click', async () => {
         if (!activePath) return;
         try {
-            await postJSON('/api/projects/save', {
-                project: context.project,
-                path: activePath,
-                content: editor.value
+            await requestJSON(`/api/projects/save/${encodeURIComponent(context.project)}/${splitPath(activePath)}`, {
+                data: { content: editor.value },
             });
             dirty = false;
             currentFile.textContent = activePath;
@@ -250,11 +292,70 @@ function bindEditor() {
     });
 }
 
-function init() {
+function buildFileTree(tree) {
+    const fileTree = qs('#file-tree');
+    if (!fileTree) return;
+    fileTree.innerHTML = '';
+
+    Object.entries(tree).forEach(([directory, files]) => {
+        const dirLabel = document.createElement('li');
+        dirLabel.textContent = directory === '.' ? 'root' : directory;
+        dirLabel.className = 'wf-tree__label';
+        fileTree.appendChild(dirLabel);
+        Object.values(files).forEach((path) => {
+            const fileItem = document.createElement('li');
+            fileItem.className = 'wf-tree__item';
+            fileItem.dataset.path = path;
+            fileItem.textContent = path;
+            fileTree.appendChild(fileItem);
+        });
+    });
+}
+
+function bindChat() {
+    const form = qs('#chat-form');
+    const input = qs('#chat-input');
+    if (!form || !input) return;
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const message = input.value.trim();
+        if (!message) return;
+        input.value = '';
+        appendChatMessage('user', message);
+        const submitButton = qs('.wf-button', form);
+        try {
+            if (submitButton) submitButton.disabled = true;
+            const payload = await requestJSON('/api/chat', { data: { message } });
+            appendChatMessage('ai', payload.response?.message || 'No response received.');
+            if (payload.response?.generated) {
+                appendChatMessage('ai', `Generated project: ${payload.response.generated.name}`);
+            }
+            if (Array.isArray(payload.projects)) {
+                renderProjectList(payload.projects);
+            }
+        } catch (error) {
+            appendChatMessage('ai', `Error: ${error.message}`);
+        } finally {
+            if (submitButton) submitButton.disabled = false;
+        }
+    });
+}
+
+async function initialise() {
     bindChat();
     bindProjectDeletion(document);
     bindModelUpload();
+    bindModelActions();
     bindEditor();
+
+    const context = window.WEBFORGE_CONTEXT || {};
+    if (context.page === 'models') {
+        await refreshModels();
+    } else {
+        await refreshProjects();
+        await refreshModels();
+    }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', initialise);

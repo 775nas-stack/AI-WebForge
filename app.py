@@ -11,10 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from forge.ai_builder import ai_builder
+from forge.local_ai import local_ai
 from forge.model_lab import SUPPORTED_EXTENSIONS, model_lab
 from forge.project_manager import project_manager
-from forge.utils import MODELS_DIR, PROJECTS_DIR
+from forge.utils import MODELS_DIR, PROJECTS_DIR, get_active_model, set_active_model
 
 
 class ChatRequest(BaseModel):
@@ -34,8 +34,6 @@ class ProjectCreationRequest(BaseModel):
 class ProjectFilePayload(BaseModel):
     """Schema for saving a single project file."""
 
-    project: str
-    path: str
     content: str
 
 
@@ -56,9 +54,10 @@ async def read_root(request: Request) -> HTMLResponse:
     """Render the chat dashboard."""
     projects = project_manager.list_projects()
     models = model_lab.list_models()
+    active_model = get_active_model()
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "projects": projects, "models": models},
+        {"request": request, "projects": projects, "models": models, "active_model": active_model},
     )
 
 
@@ -73,7 +72,16 @@ async def projects_page(request: Request) -> HTMLResponse:
 async def models_page(request: Request) -> HTMLResponse:
     """Render the model management dashboard."""
     models = model_lab.list_models()
-    return templates.TemplateResponse("models.html", {"request": request, "models": models})
+    active = get_active_model()
+    return templates.TemplateResponse("models.html", {"request": request, "models": models, "active_model": active})
+
+
+@app.get("/editor", response_class=HTMLResponse)
+async def editor_landing(request: Request) -> HTMLResponse:
+    """Display available projects for selection."""
+
+    projects = project_manager.list_projects()
+    return templates.TemplateResponse("editor_select.html", {"request": request, "projects": projects})
 
 
 @app.get("/editor/{project}", response_class=HTMLResponse)
@@ -97,9 +105,24 @@ async def editor_page(request: Request, project: str) -> HTMLResponse:
 @app.post("/api/chat")
 async def api_chat(payload: ChatRequest) -> JSONResponse:
     """Return chat response and optionally trigger project generation."""
-    result = ai_builder.chat(payload.message)
+    prompt = payload.message.strip()
+    should_generate = any(keyword in prompt.lower() for keyword in ("create", "build", "generate"))
+
+    response_text = local_ai.generate_response(prompt)
+    generated_project: Optional[Dict[str, object]] = None
+    if should_generate:
+        try:
+            generated_project = project_manager.create_from_prompt(prompt)
+        except Exception as exc:  # pragma: no cover - filesystem errors
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     projects = project_manager.list_projects()
-    return JSONResponse({"response": result, "projects": projects})
+    return JSONResponse(
+        {
+            "response": {"message": response_text, "generated": generated_project},
+            "projects": projects,
+        }
+    )
 
 
 @app.get("/api/projects")
@@ -148,11 +171,12 @@ async def api_project_file(project: str, path: str) -> Dict[str, str]:
     return {"path": path, "content": content}
 
 
-@app.post("/api/projects/save")
-async def api_save_project_file(payload: ProjectFilePayload) -> Dict[str, str]:
+@app.post("/api/projects/save/{project}/{file_path:path}")
+async def api_save_project_file(project: str, file_path: str, payload: ProjectFilePayload) -> Dict[str, str]:
     """Persist a file update to disk."""
+
     try:
-        project_manager.save_file(payload.project, payload.path, payload.content)
+        project_manager.save_file(project, file_path, payload.content)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "saved"}
@@ -170,6 +194,17 @@ async def api_download_project(project: str) -> StreamingResponse:
     return StreamingResponse(memory_file, media_type="application/zip", headers=headers)
 
 
+@app.get("/api/projects/run/{project}", response_class=HTMLResponse)
+async def api_run_project(project: str) -> HTMLResponse:
+    """Return HTML markup to preview a generated project."""
+
+    try:
+        html = project_manager.preview_html(project)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return HTMLResponse(html)
+
+
 @app.post("/api/models/upload")
 async def api_upload_model(file: UploadFile = File(...)) -> Dict[str, object]:
     """Upload a model file into local storage."""
@@ -178,14 +213,48 @@ async def api_upload_model(file: UploadFile = File(...)) -> Dict[str, object]:
         raise HTTPException(status_code=400, detail=f"Unsupported model format: {extension}")
 
     data = await file.read()
-    metadata = model_lab.save_model(file.filename, data)
-    return {"model": metadata.to_dict()}
+    record = model_lab.save_model(file.filename, data)
+    return {"model": record}
 
 
 @app.get("/api/models")
 async def api_list_models() -> Dict[str, object]:
     """Return metadata about stored models."""
-    return {"models": model_lab.list_models()}
+
+    return {"models": model_lab.list_models(), "active": get_active_model()}
+
+
+@app.post("/api/models/select/{name}")
+async def api_select_model(name: str) -> Dict[str, str]:
+    """Set the active model for the local inference engine."""
+
+    previous = get_active_model()
+    try:
+        model_lab.select_model(name)
+        local_ai.load_model(name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - loader specific errors
+        if previous:
+            set_active_model(previous)
+        else:
+            set_active_model(None)
+        local_ai.clear_model()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"active_model": name}
+
+
+@app.delete("/api/models/delete/{name}")
+async def api_delete_model(name: str) -> Dict[str, str]:
+    """Delete a stored model."""
+
+    try:
+        model_lab.delete_model(name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if get_active_model() is None:
+        local_ai.clear_model()
+    return {"status": "deleted"}
 
 
 @app.post("/api/models/compare")

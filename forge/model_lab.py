@@ -4,10 +4,16 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .utils import MODELS_DIR, human_readable_size
+try:  # pragma: no cover - optional dependency
+    import torch
+except Exception:  # pragma: no cover - optional dependency
+    torch = None  # type: ignore
+
+from .utils import MODELS_DIR, get_active_model, human_readable_size, set_active_model
 
 
 SUPPORTED_EXTENSIONS = {".pt", ".onnx", ".gguf", ".safetensors"}
@@ -53,7 +59,7 @@ class ModelLab:
                 hasher.update(chunk)
         return hasher.hexdigest()
 
-    def save_model(self, filename: str, data: bytes) -> ModelMetadata:
+    def save_model(self, filename: str, data: bytes) -> Dict[str, str]:
         """Persist a new model file to disk and return its metadata."""
         target_path = self.base_dir / filename
         target_path.write_bytes(data)
@@ -64,8 +70,14 @@ class ModelLab:
             size=target_path.stat().st_size,
             hash=file_hash,
         )
-        self._metadata_path(filename).write_text(json.dumps(metadata.to_dict(), indent=2), encoding="utf-8")
-        return metadata
+        record = metadata.to_dict()
+        record["uploaded_at"] = datetime.utcnow().isoformat()
+        record["parameters"] = self._estimate_parameters(target_path)
+        self._metadata_path(filename).write_text(json.dumps(record, indent=2), encoding="utf-8")
+        if not get_active_model():
+            set_active_model(filename)
+        record["active"] = record["name"] == get_active_model()
+        return record
 
     def list_models(self) -> List[Dict[str, str]]:
         """Return metadata for all stored models."""
@@ -75,17 +87,23 @@ class ModelLab:
                 metadata_path = self._metadata_path(path.name)
                 if metadata_path.exists():
                     try:
-                        models.append(json.loads(metadata_path.read_text()))
+                        payload = json.loads(metadata_path.read_text())
+                        payload.setdefault("active", payload.get("name") == get_active_model())
+                        models.append(payload)
                         continue
                     except json.JSONDecodeError:
                         pass
                 file_hash = self._hash_file(path)
-                models.append(ModelMetadata(
+                payload = ModelMetadata(
                     name=path.name,
                     path=path,
                     size=path.stat().st_size,
                     hash=file_hash,
-                ).to_dict())
+                ).to_dict()
+                payload["uploaded_at"] = datetime.utcnow().isoformat()
+                payload["parameters"] = self._estimate_parameters(path)
+                payload["active"] = payload["name"] == get_active_model()
+                models.append(payload)
         return models
 
     def compare_models(self, first: str, second: str) -> Dict[str, Optional[str]]:
@@ -127,6 +145,48 @@ class ModelLab:
         merged_path = self.base_dir / merged_name
         merged_path.write_bytes(first_path.read_bytes())
         return merged_name
+
+    def select_model(self, filename: str) -> Dict[str, str]:
+        """Mark the provided model as active for inference."""
+
+        target = self.base_dir / filename
+        if not target.exists():
+            raise FileNotFoundError(f"Model '{filename}' not found.")
+        set_active_model(filename)
+        return {"active_model": filename}
+
+    def delete_model(self, filename: str) -> None:
+        """Remove a stored model and associated metadata."""
+
+        target = self.base_dir / filename
+        if not target.exists():
+            raise FileNotFoundError(f"Model '{filename}' not found.")
+        target.unlink()
+        meta = self._metadata_path(filename)
+        if meta.exists():
+            meta.unlink()
+        if get_active_model() == filename:
+            set_active_model(None)
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+    def _estimate_parameters(self, path: Path) -> Optional[str]:
+        """Return a lightweight parameter estimate for PyTorch models."""
+
+        if torch is None or path.suffix.lower() not in {".pt", ".pth", ".safetensors"}:
+            return None
+        try:
+            weights = torch.load(path, map_location="cpu")  # type: ignore[call-arg]
+        except Exception:  # pragma: no cover - best effort
+            return None
+        if isinstance(weights, dict) and "state_dict" in weights:
+            weights = weights["state_dict"]
+        if isinstance(weights, dict):
+            total = sum(param.numel() if hasattr(param, "numel") else 0 for param in weights.values())
+            if total:
+                return f"{total:,}"
+        return None
 
 
 model_lab = ModelLab()

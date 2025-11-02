@@ -24,6 +24,7 @@
                         {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
                     </div>
                     <div class="wf-actions">
+                        <a class="wf-link" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
                         <a class="wf-link" href="/editor/{{ project.name }}">Open</a>
                         <a class="wf-link" href="/api/projects/download/{{ project.name }}">Download</a>
                         <button class="wf-link wf-link--danger" data-action="delete" data-project="{{ project.name }}">Delete</button>
@@ -35,12 +36,12 @@
         </ul>
         <h2 class="wf-sidebar__section">Models</h2>
         <p class="wf-muted">Uploaded model assets</p>
-        <ul class="wf-list" id="model-list">
+        <ul class="wf-list" id="model-list" data-active="{{ active_model }}">
             {% for model in models %}
                 <li class="wf-list__item">
                     <div>
                         <strong>{{ model.name }}</strong>
-                        <p class="wf-muted">{{ model.type|upper }} · {{ model.size }}</p>
+                        <p class="wf-muted">{{ model.type|upper }} · {{ model.size }}{% if model.name == active_model %} · Active{% endif %}</p>
                     </div>
                 </li>
             {% else %}
