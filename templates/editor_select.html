@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}AI-WebForge · Editor{% endblock %}
+{% block content %}
+<section class="wf-page">
+    <header class="wf-page__header">
+        <div>
+            <h1>Select a project to edit</h1>
+            <p class="wf-muted">Choose a generated project to open the workspace editor.</p>
+        </div>
+        <a class="wf-button" href="/">Create new project</a>
+    </header>
+    <ul class="wf-list">
+        {% for project in projects %}
+            <li class="wf-list__item">
+                <div>
+                    <strong>{{ project.name }}</strong>
+                    {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
+                </div>
+                <div class="wf-actions">
+                    <a class="wf-link" href="/editor/{{ project.name }}">Open Editor</a>
+                    <a class="wf-link" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
+                </div>
+            </li>
+        {% else %}
+            <li class="wf-empty">No projects available yet. Start a conversation on the home page to generate one.</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}

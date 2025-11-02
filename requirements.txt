@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+jinja2
+pydantic-settings
+python-multipart
+torch
+transformers
+ctransformers
+llama-cpp-python
+safetensors
+gitpython

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}AI-WebForge · Projects{% endblock %}
+{% block content %}
+<section class="wf-page">
+    <header class="wf-page__header">
+        <div>
+            <h1>Projects</h1>
+            <p class="wf-muted">Browse and manage generated applications.</p>
+        </div>
+        <a class="wf-button" href="/">Start new project</a>
+    </header>
+    <div class="wf-grid">
+        {% for project in projects %}
+            <article class="wf-card">
+                <h2>{{ project.name }}</h2>
+                {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
+                <div class="wf-card__actions">
+                    <a class="wf-link" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
+                    <a class="wf-link" href="/editor/{{ project.name }}">Open</a>
+                    <a class="wf-link" href="/api/projects/download/{{ project.name }}">Download</a>
+                    <button class="wf-link wf-link--danger" data-action="delete" data-project="{{ project.name }}">Delete</button>
+                </div>
+            </article>
+        {% else %}
+            <div class="wf-empty">No projects yet. Use the chat to create your first scaffold.</div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>window.WEBFORGE_CONTEXT = {page: "projects"};</script>
+{% endblock %}
