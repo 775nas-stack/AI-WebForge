@@ -1,40 +1,38 @@
 {% extends "base.html" %}
 {% block title %}AI-WebForge · Models{% endblock %}
 {% block content %}
-<section class="wf-page">
-    <header class="wf-page__header">
+<section class="page">
+    <header class="page__header">
         <div>
-            <h1>Model Lab</h1>
-            <p class="wf-muted">Upload, compare, and organise your AI models.</p>
+            <h1>Model lab</h1>
+            <p class="muted">Upload and manage local model artifacts to extend the builder.</p>
         </div>
-        <form id="model-upload-form" class="wf-upload" enctype="multipart/form-data">
-            <label class="wf-upload__label">
+        <form id="model-upload-form" class="upload" enctype="multipart/form-data">
+            <label class="upload__label">
                 <input type="file" name="file" accept=".pt,.onnx,.gguf,.safetensors" required>
-                <span>Upload model</span>
+                <span>Select file</span>
             </label>
-            <button type="submit" class="wf-button">Submit</button>
+            <button type="submit" class="primary-button">Upload</button>
         </form>
     </header>
-    <div class="wf-grid wf-grid--models" id="model-grid" data-active="{{ active_model }}">
+    <div class="model-grid" id="model-grid" data-active="{{ active_model }}">
         {% for model in models %}
-            <article class="wf-card" data-model="{{ model.name }}">
-                <header class="wf-card__header">
+            <article class="model-card" data-model="{{ model.name }}">
+                <header>
                     <h2>{{ model.name }}</h2>
-                    {% if model.name == active_model %}
-                        <span class="wf-badge">Active</span>
-                    {% endif %}
+                    {% if model.name == active_model %}<span class="badge">Active</span>{% endif %}
                 </header>
-                <p class="wf-muted">{{ model.type|upper }} · {{ model.size }}</p>
-                <p class="wf-hash">SHA256: {{ model.hash }}</p>
-                {% if model.parameters %}<p class="wf-muted">Parameters: {{ model.parameters }}</p>{% endif %}
-                {% if model.uploaded_at %}<p class="wf-muted">Uploaded {{ model.uploaded_at }}</p>{% endif %}
-                <div class="wf-card__actions">
-                    <button class="wf-link" data-action="activate" data-model="{{ model.name }}">Use model</button>
-                    <button class="wf-link wf-link--danger" data-action="delete-model" data-model="{{ model.name }}">Delete</button>
-                </div>
+                <p class="muted">{{ model.type|upper }} · {{ model.size }}</p>
+                <p class="muted">SHA256 · {{ model.hash }}</p>
+                {% if model.parameters %}<p class="muted">Parameters · {{ model.parameters }}</p>{% endif %}
+                {% if model.uploaded_at %}<p class="muted">Uploaded {{ model.uploaded_at }}</p>{% endif %}
+                <footer class="model-card__actions">
+                    <button class="ghost-button" data-action="activate" data-model="{{ model.name }}">Use model</button>
+                    <button class="ghost-button ghost-button--danger" data-action="delete-model" data-model="{{ model.name }}">Delete</button>
+                </footer>
             </article>
         {% else %}
-            <div class="wf-empty">No models uploaded yet. Upload your first model to begin.</div>
+            <div class="empty-state">No models uploaded yet. Add one to experiment with local intelligence.</div>
         {% endfor %}
     </div>
 </section>

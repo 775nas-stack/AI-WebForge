@@ -1,28 +1,28 @@
 {% extends "base.html" %}
 {% block title %}AI-WebForge · Editor{% endblock %}
 {% block content %}
-<section class="wf-page">
-    <header class="wf-page__header">
+<section class="page">
+    <header class="page__header">
         <div>
-            <h1>Select a project to edit</h1>
-            <p class="wf-muted">Choose a generated project to open the workspace editor.</p>
+            <h1>Select a project</h1>
+            <p class="muted">Pick a saved build to open it in the live editor.</p>
         </div>
-        <a class="wf-button" href="/">Create new project</a>
+        <a class="primary-button" href="/">Create new build</a>
     </header>
-    <ul class="wf-list">
+    <ul class="project-list project-list--compact">
         {% for project in projects %}
-            <li class="wf-list__item">
+            <li class="project-list__item">
                 <div>
                     <strong>{{ project.name }}</strong>
-                    {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
+                    {% if project.summary %}<p class="muted">{{ project.summary }}</p>{% endif %}
                 </div>
-                <div class="wf-actions">
-                    <a class="wf-link" href="/editor/{{ project.name }}">Open Editor</a>
-                    <a class="wf-link" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
+                <div class="project-list__actions">
+                    <a class="ghost-button" href="/editor/{{ project.name }}">Open editor</a>
+                    <a class="ghost-button" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
                 </div>
             </li>
         {% else %}
-            <li class="wf-empty">No projects available yet. Start a conversation on the home page to generate one.</li>
+            <li class="empty-state">No projects yet. Start building from the home page.</li>
         {% endfor %}
     </ul>
 </section>

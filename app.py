@@ -1,24 +1,28 @@
 """Entry point for the AI-WebForge FastAPI application."""
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Dict, Optional
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket
+from fastapi.exceptions import WebSocketDisconnect
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from forge.ai_controller import ai_controller
+from forge.build_stream import build_stream
 from forge.local_ai import local_ai
 from forge.model_lab import SUPPORTED_EXTENSIONS, model_lab
 from forge.project_manager import project_manager
 from forge.utils import MODELS_DIR, PROJECTS_DIR, get_active_model, set_active_model
 
 
-class ChatRequest(BaseModel):
-    """Payload schema for chat requests."""
+class BuildRequest(BaseModel):
+    """Payload schema for initiating a build session."""
 
     message: str
 
@@ -53,11 +57,9 @@ templates = Jinja2Templates(directory="templates")
 async def read_root(request: Request) -> HTMLResponse:
     """Render the chat dashboard."""
     projects = project_manager.list_projects()
-    models = model_lab.list_models()
-    active_model = get_active_model()
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "projects": projects, "models": models, "active_model": active_model},
+        {"request": request, "projects": projects},
     )
 
 
@@ -102,27 +104,55 @@ async def editor_page(request: Request, project: str) -> HTMLResponse:
     )
 
 
-@app.post("/api/chat")
-async def api_chat(payload: ChatRequest) -> JSONResponse:
-    """Return chat response and optionally trigger project generation."""
+@app.post("/api/build")
+async def api_build(payload: BuildRequest) -> Dict[str, object]:
+    """Create a new build session and start streaming events."""
+
     prompt = payload.message.strip()
-    should_generate = any(keyword in prompt.lower() for keyword in ("create", "build", "generate"))
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
-    response_text = local_ai.generate_response(prompt)
-    generated_project: Optional[Dict[str, object]] = None
-    if should_generate:
-        try:
-            generated_project = project_manager.create_from_prompt(prompt)
-        except Exception as exc:  # pragma: no cover - filesystem errors
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    projects = project_manager.list_projects()
-    return JSONResponse(
+    session = build_stream.create_session(prompt)
+    build_stream.publish(
+        session.id,
         {
-            "response": {"message": response_text, "generated": generated_project},
-            "projects": projects,
-        }
+            "type": "status",
+            "stage": "queued",
+            "message": "Build session created",
+            "prompt": prompt,
+        },
     )
+    asyncio.create_task(ai_controller.run_build(session.id))
+
+    return {"session": session.snapshot()}
+
+
+@app.websocket("/ws/build/{session_id}")
+async def ws_build(websocket: WebSocket, session_id: str) -> None:
+    """Stream build events to the connected client."""
+
+    session = build_stream.get_session(session_id)
+    if session is None:
+        await websocket.close(code=4404)
+        return
+
+    await websocket.accept()
+
+    # replay existing history first
+    for event in session.history:
+        await websocket.send_json(event)
+
+    while True:
+        try:
+            session.queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+    try:
+        async for event in build_stream.stream(session_id):
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        return
 
 
 @app.get("/api/projects")
@@ -180,6 +210,16 @@ async def api_save_project_file(project: str, file_path: str, payload: ProjectFi
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"status": "saved"}
+
+
+@app.get("/api/projects/{project}/manifest")
+async def api_project_manifest(project: str) -> Dict[str, object]:
+    """Return manifest metadata and history for a project."""
+
+    manifest = project_manager.load_manifest(project)
+    if not manifest:
+        raise HTTPException(status_code=404, detail="Manifest not found")
+    return {"manifest": manifest}
 
 
 @app.get("/api/projects/download/{project}")

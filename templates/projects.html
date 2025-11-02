@@ -1,28 +1,32 @@
 {% extends "base.html" %}
 {% block title %}AI-WebForge · Projects{% endblock %}
 {% block content %}
-<section class="wf-page">
-    <header class="wf-page__header">
+<section class="page">
+    <header class="page__header">
         <div>
-            <h1>Projects</h1>
-            <p class="wf-muted">Browse and manage generated applications.</p>
+            <h1>Your projects</h1>
+            <p class="muted">Browse everything the AI Builder has created. Open a project to keep iterating.</p>
         </div>
-        <a class="wf-button" href="/">Start new project</a>
+        <a class="primary-button" href="/">Start a new build</a>
     </header>
-    <div class="wf-grid">
+    <div class="project-grid">
         {% for project in projects %}
-            <article class="wf-card">
-                <h2>{{ project.name }}</h2>
-                {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
-                <div class="wf-card__actions">
-                    <a class="wf-link" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
-                    <a class="wf-link" href="/editor/{{ project.name }}">Open</a>
-                    <a class="wf-link" href="/api/projects/download/{{ project.name }}">Download</a>
-                    <button class="wf-link wf-link--danger" data-action="delete" data-project="{{ project.name }}">Delete</button>
-                </div>
+            <article class="project-card" data-project="{{ project.name }}">
+                <header>
+                    <h2>{{ project.name }}</h2>
+                    {% if project.updated_at %}<span class="muted">Updated {{ project.updated_at }}</span>{% endif %}
+                </header>
+                {% if project.summary %}<p class="muted">{{ project.summary }}</p>{% endif %}
+                {% if project.stack %}<p class="tag">Stack · {{ project.stack }}</p>{% endif %}
+                <footer class="project-card__actions">
+                    <a class="ghost-button" href="/api/projects/run/{{ project.name }}" target="_blank">Play</a>
+                    <a class="ghost-button" href="/editor/{{ project.name }}">Open</a>
+                    <a class="ghost-button" href="/api/projects/download/{{ project.name }}">Download</a>
+                    <button class="ghost-button ghost-button--danger" data-action="delete" data-project="{{ project.name }}">Delete</button>
+                </footer>
             </article>
         {% else %}
-            <div class="wf-empty">No projects yet. Use the chat to create your first scaffold.</div>
+            <div class="empty-state">No projects yet. Head back to the builder and describe what you want to create.</div>
         {% endfor %}
     </div>
 </section>
