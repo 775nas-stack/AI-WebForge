@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}AI-WebForge · Home{% endblock %}
+{% block content %}
+<section class="wf-dashboard">
+    <div class="wf-chat" id="chat-panel">
+        <div class="wf-chat__header">
+            <h1>Forge your next idea</h1>
+            <p>Describe what you want to build and AI-WebForge will scaffold the project.</p>
+        </div>
+        <div class="wf-chat__log" id="chat-log"></div>
+        <form class="wf-chat__form" id="chat-form">
+            <input type="text" id="chat-input" placeholder="e.g. Create a sleek portfolio website" autocomplete="off" required>
+            <button type="submit" class="wf-button">Send</button>
+        </form>
+    </div>
+    <div class="wf-sidebar">
+        <h2>Projects</h2>
+        <p class="wf-muted">Recently generated scaffolds</p>
+        <ul class="wf-list" id="project-list">
+            {% for project in projects %}
+                <li class="wf-list__item" data-project="{{ project.name }}">
+                    <div>
+                        <strong>{{ project.name }}</strong>
+                        {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
+                    </div>
+                    <div class="wf-actions">
+                        <a class="wf-link" href="/editor/{{ project.name }}">Open</a>
+                        <a class="wf-link" href="/api/projects/download/{{ project.name }}">Download</a>
+                        <button class="wf-link wf-link--danger" data-action="delete" data-project="{{ project.name }}">Delete</button>
+                    </div>
+                </li>
+            {% else %}
+                <li class="wf-empty">No projects yet. Start by chatting with the builder.</li>
+            {% endfor %}
+        </ul>
+        <h2 class="wf-sidebar__section">Models</h2>
+        <p class="wf-muted">Uploaded model assets</p>
+        <ul class="wf-list" id="model-list">
+            {% for model in models %}
+                <li class="wf-list__item">
+                    <div>
+                        <strong>{{ model.name }}</strong>
+                        <p class="wf-muted">{{ model.type|upper }} · {{ model.size }}</p>
+                    </div>
+                </li>
+            {% else %}
+                <li class="wf-empty">No models uploaded yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</section>
+{% endblock %}
