@@ -4,21 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AI-WebForge{% endblock %}</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% block head %}{% endblock %}
 </head>
 <body>
-    <header class="wf-header">
-        <div class="wf-logo">AI-WebForge</div>
-        <nav class="wf-nav">
-            <a href="/" class="wf-nav__link">Home</a>
-            <a href="/projects" class="wf-nav__link">Projects</a>
-            <a href="/models" class="wf-nav__link">Models</a>
-            <a href="/editor" class="wf-nav__link">Editor</a>
+    <header class="app-header">
+        <div class="app-header__brand">AI-WebForge</div>
+        <nav class="app-header__nav">
+            <a href="/" class="app-header__link{% if request.url.path == '/' %} is-active{% endif %}">Builder</a>
+            <a href="/projects" class="app-header__link{% if request.url.path.startswith('/projects') %} is-active{% endif %}">Projects</a>
+            <a href="/models" class="app-header__link{% if request.url.path.startswith('/models') %} is-active{% endif %}">Models</a>
+            <a href="/editor" class="app-header__link{% if request.url.path.startswith('/editor') %} is-active{% endif %}">Editor</a>
         </nav>
     </header>
-    <main class="wf-main">
+    <main class="app-main">
         {% block content %}{% endblock %}
     </main>
     <script src="{{ url_for('static', path='js/main.js') }}" defer></script>

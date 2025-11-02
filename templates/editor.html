@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% block title %}AI-WebForge · Editor · {{ project }}{% endblock %}
 {% block content %}
-<section class="wf-editor" data-project="{{ project }}">
-    <aside class="wf-editor__sidebar">
+<section class="editor" data-project="{{ project }}">
+    <aside class="editor__sidebar">
         <h1>{{ project }}</h1>
-        <ul class="wf-tree" id="file-tree"></ul>
+        <ul class="file-tree" id="file-tree"></ul>
     </aside>
-    <section class="wf-editor__workspace">
-        <header class="wf-editor__header">
+    <section class="editor__workspace">
+        <header class="editor__header">
             <span id="current-file">Select a file to view</span>
-            <button id="save-file" class="wf-button" disabled>Save</button>
+            <button id="save-file" class="primary-button" disabled>Save</button>
         </header>
         <textarea id="editor" spellcheck="false" placeholder="File contents will appear here..." disabled></textarea>
     </section>

@@ -8,7 +8,7 @@ import textwrap
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .utils import PROJECTS_DIR, collect_directory_tree, slugify
 
@@ -23,22 +23,98 @@ class ProjectManager:
     def _project_path(self, name: str) -> Path:
         return self.base_dir / name
 
+    def _manifest_path(self, name: str) -> Path:
+        return self._project_path(name) / "manifest.json"
+
+    def load_manifest(self, name: str) -> Dict[str, Any]:
+        """Return the stored manifest for a project, if it exists."""
+
+        manifest_path = self._manifest_path(name)
+        if not manifest_path.exists():
+            return {}
+        try:
+            return json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+    def _write_manifest(self, name: str, manifest: Dict[str, Any]) -> None:
+        manifest_path = self._manifest_path(name)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    def _default_manifest(
+        self,
+        name: str,
+        summary: str,
+        prompt: Optional[str] = None,
+        stack: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return a base manifest structure for a project."""
+
+        now = datetime.utcnow().isoformat() + "Z"
+        manifest: Dict[str, Any] = {
+            "name": name,
+            "summary": summary,
+            "prompt": prompt or "",
+            "created_at": now,
+            "updated_at": now,
+            "stack": stack or "unknown",
+            "history": [],
+        }
+        return manifest
+
+    def append_history(self, name: str, event: Dict[str, Any]) -> None:
+        """Append an event to the project manifest history."""
+
+        manifest = self.load_manifest(name) or self._default_manifest(name, "")
+        history = manifest.setdefault("history", [])
+        timestamp = datetime.utcnow().isoformat() + "Z"
+        event.setdefault("timestamp", timestamp)
+        history.append(event)
+        manifest["updated_at"] = timestamp
+        # keep history reasonable in size
+        if len(history) > 200:
+            manifest["history"] = history[-200:]
+        self._write_manifest(name, manifest)
+
+    def update_manifest(self, name: str, **fields: Any) -> None:
+        """Update specific fields in the manifest."""
+
+        manifest = self.load_manifest(name)
+        if not manifest:
+            manifest = self._default_manifest(name, fields.get("summary", ""))
+        manifest.update(fields)
+        manifest["updated_at"] = datetime.utcnow().isoformat() + "Z"
+        self._write_manifest(name, manifest)
+
+    def ensure_unique_name(self, desired: str) -> str:
+        """Return a unique project name based on the desired slug."""
+
+        if not desired:
+            desired = "project"
+        candidate = desired
+        counter = 1
+        while self._project_path(candidate).exists():
+            counter += 1
+            candidate = f"{desired}-{counter}"
+        return candidate
+
     def list_projects(self) -> List[Dict[str, str]]:
         """Return metadata about all saved projects."""
         projects: List[Dict[str, str]] = []
         for path in sorted(self.base_dir.iterdir()):
             if path.is_dir():
-                manifest = path / "manifest.json"
-                summary = ""
-                if manifest.exists():
-                    try:
-                        summary = json.loads(manifest.read_text()).get("summary", "")
-                    except json.JSONDecodeError:
-                        summary = ""
-                projects.append({
-                    "name": path.name,
-                    "summary": summary,
-                })
+                manifest = self.load_manifest(path.name)
+                summary = manifest.get("summary", "") if manifest else ""
+                projects.append(
+                    {
+                        "name": path.name,
+                        "summary": summary,
+                        "stack": manifest.get("stack") if manifest else None,
+                        "created_at": manifest.get("created_at") if manifest else None,
+                        "updated_at": manifest.get("updated_at") if manifest else None,
+                    }
+                )
         return projects
 
     def create_project(self, name: str, files: Dict[str, str], summary: str = "") -> Path:
@@ -47,15 +123,34 @@ class ProjectManager:
         if project_dir.exists():
             raise FileExistsError(f"Project '{name}' already exists.")
 
+        project_dir.mkdir(parents=True, exist_ok=False)
+
         for relative_path, content in files.items():
             file_path = project_dir / relative_path
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
 
-        if summary:
-            (project_dir / "manifest.json").write_text(json.dumps({"summary": summary}, indent=2), encoding="utf-8")
+        manifest = self._default_manifest(name, summary, stack="generated")
+        self._write_manifest(name, manifest)
 
         return project_dir
+
+    def initialize_project(
+        self,
+        name: str,
+        summary: str,
+        prompt: str,
+        stack: str,
+    ) -> Dict[str, Any]:
+        """Create a new project directory and manifest ready for streaming builds."""
+
+        project_dir = self._project_path(name)
+        if project_dir.exists():
+            raise FileExistsError(f"Project '{name}' already exists.")
+        project_dir.mkdir(parents=True, exist_ok=False)
+        manifest = self._default_manifest(name, summary, prompt=prompt, stack=stack)
+        self._write_manifest(name, manifest)
+        return manifest
 
     def create_from_prompt(self, prompt: str) -> Dict[str, object]:
         """Generate a scaffolded project using the provided natural language prompt."""
@@ -74,6 +169,7 @@ class ProjectManager:
                 counter += 1
                 project_name = f"{base_name}-{counter}"
             else:
+                self.update_manifest(project_name, prompt=prompt, stack="scaffold")
                 break
 
         return {"name": project_name, "summary": summary, "files": files}
@@ -120,6 +216,7 @@ class ProjectManager:
         file_path = project_dir / relative_path
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(content, encoding="utf-8")
+        self.update_manifest(name)
         return file_path
 
     def zip_project(self, name: str) -> Tuple[io.BytesIO, str]:

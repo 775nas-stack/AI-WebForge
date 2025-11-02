@@ -1,53 +1,87 @@
 {% extends "base.html" %}
-{% block title %}AI-WebForge · Home{% endblock %}
+{% block title %}AI-WebForge · AI Builder{% endblock %}
 {% block content %}
-<section class="wf-dashboard">
-    <div class="wf-chat" id="chat-panel">
-        <div class="wf-chat__header">
-            <h1>Forge your next idea</h1>
-            <p>Describe what you want to build and AI-WebForge will scaffold the project.</p>
-        </div>
-        <div class="wf-chat__log" id="chat-log"></div>
-        <form class="wf-chat__form" id="chat-form">
-            <input type="text" id="chat-input" placeholder="e.g. Create a sleek portfolio website" autocomplete="off" required>
-            <button type="submit" class="wf-button">Send</button>
-        </form>
+<section class="builder">
+    <div class="builder__intro">
+        <h1>Welcome back. I can build anything you want.</h1>
+        <p class="muted">Describe the idea in plain language and I'll plan, code, and explain every step as it happens.</p>
     </div>
-    <div class="wf-sidebar">
-        <h2>Projects</h2>
-        <p class="wf-muted">Recently generated scaffolds</p>
-        <ul class="wf-list" id="project-list">
-            {% for project in projects %}
-                <li class="wf-list__item" data-project="{{ project.name }}">
+    <div class="builder__workspace">
+        <div class="builder__column builder__column--chat">
+            <article class="panel panel--chat">
+                <header class="panel__header">
                     <div>
-                        <strong>{{ project.name }}</strong>
-                        {% if project.summary %}<p class="wf-muted">{{ project.summary }}</p>{% endif %}
+                        <h2>Live building chat</h2>
+                        <p class="muted">Give me a request — "Build a dashboard", "Create a backend", anything. I'll take it from there.</p>
                     </div>
-                    <div class="wf-actions">
-                        <a class="wf-link" href="/api/projects/run/{{ project.name }}" target="_blank">Preview</a>
-                        <a class="wf-link" href="/editor/{{ project.name }}">Open</a>
-                        <a class="wf-link" href="/api/projects/download/{{ project.name }}">Download</a>
-                        <button class="wf-link wf-link--danger" data-action="delete" data-project="{{ project.name }}">Delete</button>
+                </header>
+                <div class="chat-log" id="chat-log">
+                    <div class="chat-log__bubble chat-log__bubble--ai">
+                        <strong>AI Builder</strong>
+                        <p>Welcome back. Tell me what to create, and I'll show you each step as I build it.</p>
                     </div>
-                </li>
-            {% else %}
-                <li class="wf-empty">No projects yet. Start by chatting with the builder.</li>
-            {% endfor %}
-        </ul>
-        <h2 class="wf-sidebar__section">Models</h2>
-        <p class="wf-muted">Uploaded model assets</p>
-        <ul class="wf-list" id="model-list" data-active="{{ active_model }}">
-            {% for model in models %}
-                <li class="wf-list__item">
+                </div>
+                <form class="chat-form" id="chat-form">
+                    <input type="text" id="chat-input" placeholder="e.g. Build a website that sells AI art" autocomplete="off" required>
+                    <button type="submit" class="primary-button">Send</button>
+                </form>
+            </article>
+        </div>
+        <div class="builder__column builder__column--console">
+            <article class="panel panel--console">
+                <header class="panel__header">
                     <div>
-                        <strong>{{ model.name }}</strong>
-                        <p class="wf-muted">{{ model.type|upper }} · {{ model.size }}{% if model.name == active_model %} · Active{% endif %}</p>
+                        <h2>Build console</h2>
+                        <p class="muted">Reasoning, progress, and generated code appear here in real time.</p>
                     </div>
-                </li>
-            {% else %}
-                <li class="wf-empty">No models uploaded yet.</li>
-            {% endfor %}
-        </ul>
+                    <button class="ghost-button" type="button" id="clear-console">Clear</button>
+                </header>
+                <div class="console-log" id="build-stream">
+                    <div class="console-log__entry console-log__entry--placeholder">No build running yet. Start by asking for something to be created.</div>
+                </div>
+            </article>
+            <article class="panel panel--files" id="file-panel">
+                <header class="panel__header">
+                    <div>
+                        <h2>Project files</h2>
+                        <p class="muted" id="active-project-label">No active project yet.</p>
+                    </div>
+                    <div class="panel__actions">
+                        <a class="ghost-button" id="open-project-link" href="#" hidden>Open</a>
+                        <a class="ghost-button" id="run-project-link" href="#" target="_blank" hidden>Play</a>
+                    </div>
+                </header>
+                <div class="files">
+                    <aside class="files__tree">
+                        <ul id="file-tree" class="file-tree"></ul>
+                    </aside>
+                    <section class="files__viewer">
+                        <header class="files__viewer-header">
+                            <span id="current-file-name">Select a file to preview</span>
+                            <button class="primary-button" id="save-active-file" disabled>Save</button>
+                        </header>
+                        <textarea id="file-editor" spellcheck="false" placeholder="Generated code will appear here." disabled></textarea>
+                    </section>
+                </div>
+            </article>
+            <article class="panel panel--projects">
+                <header class="panel__header">
+                    <div>
+                        <h2>Saved projects</h2>
+                        <p class="muted">Every build is stored so you can reopen, edit, or export it.</p>
+                    </div>
+                </header>
+                <ul class="project-list" id="project-list"></ul>
+            </article>
+        </div>
     </div>
 </section>
+{% endblock %}
+{% block scripts %}
+<script>
+    window.WEBFORGE_CONTEXT = {
+        page: "home",
+        projects: {{ projects | tojson }}
+    };
+</script>
 {% endblock %}
